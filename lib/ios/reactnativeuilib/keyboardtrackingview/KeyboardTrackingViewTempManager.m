@@ -102,7 +102,7 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
     {
         view = view.superview;
         if ([view isKindOfClass:[RCTRootView class]] || [NSStringFromClass([view class]) isEqualToString:@"RNSScreenView"] ) {
-            return view
+            return view;
         }
     }
     return nil;
