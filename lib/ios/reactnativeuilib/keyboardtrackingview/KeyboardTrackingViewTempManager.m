@@ -48,6 +48,7 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
 @property (nonatomic) BOOL requiresSameParentToManageScrollView;
 @property (nonatomic) NSUInteger deferedInitializeAccessoryViewsCount;
 @property (nonatomic) CGFloat originalHeight;
+@property (nonatomic) CGFloat bottomSafeAreaHeight;
 @property (nonatomic) KeyboardTrackingScrollBehavior scrollBehavior;
 @property (nonatomic) BOOL addBottomView;
 @property (nonatomic, strong) UIColor *bottomViewColor;
@@ -86,6 +87,7 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
         self.bottomViewColor = [UIColor whiteColor];
         self.scrollToFocusedInput = NO;
         self.usesBottomTabs = NO;
+        self.bottomSafeAreaHeight = NSNotFound;
         
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(rctContentDidAppearNotification:) name:RCTContentDidAppearNotification object:nil];
     }
@@ -99,13 +101,9 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
     while (view.superview != nil)
     {
         view = view.superview;
-        if ([view isKindOfClass:[RCTRootView class]])
-            break;
-    }
-    
-    if ([view isKindOfClass:[RCTRootView class]])
-    {
-        return (RCTRootView*)view;
+        if ([view isKindOfClass:[RCTRootView class]] || [NSStringFromClass([view class]) isEqualToString:@"RNSScreenView"] ) {
+            return view
+        }
     }
     return nil;
 }
@@ -171,8 +169,13 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
 
 - (void)initializeAccessoryViewsAndHandleInsets
 {
-    NSArray<UIView*>* allSubviews = [self getBreadthFirstSubviewsForView:[self getRootView]];
+    RCTRootView* rootView = [self getRootView];
+    NSArray<UIView*>* allSubviews = [self getBreadthFirstSubviewsForView:rootView];
     NSMutableArray<RCTScrollView*>* rctScrollViewsArray = [NSMutableArray array];
+    
+    if (rootView == nil) {
+       NSLog(@"Failed to find root view");
+    }
     
     for (UIView* subview in allSubviews)
     {
@@ -264,6 +267,10 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
         }
     }
 #endif
+    
+    if (_scrollViewToManage == nil) {
+        NSLog(@"Failed to find scroll view");
+    }
     
     [self _updateScrollViewInsets];
     
@@ -400,7 +407,8 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
         CGFloat originalBottomInset = self.scrollIsInverted ? insets.top : insets.bottom;
         CGPoint originalOffset = self.scrollViewToManage.contentOffset;
         
-        bottomInset += (_ObservingInputAccessoryViewTemp.keyboardHeight == 0 ? bottomSafeArea : 0);
+        // Sometimes the keyboard height can be 0.00002 or -0.00002 but is basically closed
+        bottomInset += (_ObservingInputAccessoryViewTemp.keyboardHeight > -0.5 && _ObservingInputAccessoryViewTemp.keyboardHeight < 0.5 ? bottomSafeArea : 0);
         if(self.scrollIsInverted)
         {
             insets.top = bottomInset;
@@ -424,7 +432,13 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
         else if(self.scrollBehavior == KeyboardTrackingScrollBehaviorFixedOffset && !self.isDraggingScrollView)
         {
             CGFloat insetsDiff = (bottomInset - originalBottomInset) * (self.scrollIsInverted ? -1 : 1);
-            self.scrollViewToManage.contentOffset = CGPointMake(originalOffset.x, originalOffset.y + insetsDiff);
+            CGFloat newOffsetY = originalOffset.y + insetsDiff;
+            if (self.scrollIsInverted && newOffsetY == -bottomInset) {
+                // Add a 1pt offset to fix an issue where the modal gesture conflicts with scrolling the scroll view
+                newOffsetY = newOffsetY + 1;
+            }
+            self.scrollViewToManage.contentOffset = CGPointMake(originalOffset.x, newOffsetY);
+            [self.scrollViewToManage becomeFirstResponder];
         }
         
         insets = self.scrollViewToManage.contentInset;
@@ -497,6 +511,9 @@ typedef NS_ENUM(NSUInteger, KeyboardTrackingScrollBehavior) {
 
 -(CGFloat)getBottomSafeArea
 {
+    if (self.bottomSafeAreaHeight != NSNotFound) {
+        return self.bottomSafeAreaHeight;
+    }
     CGFloat bottomSafeArea = 0;
 #if __IPHONE_OS_VERSION_MAX_ALLOWED > __IPHONE_10_3
     if (@available(iOS 11.0, *) && self.useSafeArea) {
@@ -668,6 +685,7 @@ RCT_REMAP_VIEW_PROPERTY(requiresSameParentToManageScrollView, requiresSameParent
 RCT_REMAP_VIEW_PROPERTY(addBottomView, addBottomView, BOOL)
 RCT_REMAP_VIEW_PROPERTY(bottomViewColor, bottomViewColor, UIColor)
 RCT_REMAP_VIEW_PROPERTY(useSafeArea, useSafeArea, BOOL)
+RCT_REMAP_VIEW_PROPERTY(bottomSafeAreaHeight, bottomSafeAreaHeight, CGFloat)
 RCT_REMAP_VIEW_PROPERTY(usesBottomTabs, usesBottomTabs, BOOL)
 RCT_REMAP_VIEW_PROPERTY(scrollToFocusedInput, scrollToFocusedInput, BOOL)
 RCT_REMAP_VIEW_PROPERTY(allowHitsOutsideBounds, allowHitsOutsideBounds, BOOL)
